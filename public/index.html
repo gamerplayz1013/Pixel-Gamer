@@ -266,7 +266,7 @@ document.addEventListener('click',e=>{const b=e.target&&e.target.closest&&e.targ
 const GH=['pigtails','ponytail','longhair','bow','tiara','flowers','catears','bunny'];
 const ago=t=>{const s=Math.max(1,Math.round((Date.now()-t)/1000));return s<60?s+'s ago':s<3600?Math.round(s/60)+'m ago':s<86400?Math.round(s/3600)+'h ago':Math.round(s/86400)+'d ago'};
 let NL=[];
-const PG_ONLINE=window.PG_ONLINE!==false;let S=null,R=[],tab='play',G={iv:null,pt:null,act:null};
+const PG_ONLINE=window.PG_ONLINE!==false;let TOK='';try{TOK=localStorage.getItem('pgtok')||''}catch(e){}let S=null,R=[],tab='play',G={iv:null,pt:null,act:null};
 function toast(t){const e=$('#toast');e.textContent=t;e.style.display='block';clearTimeout(toast.t);toast.t=setTimeout(()=>e.style.display='none',2600)}
 const MX=['best','bl','bk'];const DB='pgv3',CRE={sigmacreator67:'SigmaCreator67',creatorninja67:'CreatorNinja67'},BOTS=[["BlixBot",1450],["PixelPanda",1210],["NovaBot",980],["TetraTom",760],["ZapBot",540],["CuteCube",330],["RexBot",210],["Nibble",90]];
 let D=null;try{D=JSON.parse(localStorage.getItem(DB))}catch(e){}
@@ -276,9 +276,15 @@ const hsh=s=>{let h=5381;for(const c of s)h=((h*33)^c.charCodeAt(0))>>>0;return 
 const boostOf=u=>Math.min(.5,(lvl(u)-1)*.02);
 const gv=(u,b,x,raw)=>{const m=raw?1:1+boostOf(u);if(u.role!=='creator')u.bucks+=Math.round(b*m);u.xp+=Math.round(x*m)};
 const note=(type,text,by,gid)=>{D.nt=D.nt||[];D.nt.unshift({t:Date.now(),type,text,by,gid:gid||''});if(D.nt.length>100)D.nt.length=100};
-const pubU=u=>({name:u.name,bucks:u.bucks,xp:u.xp,level:lvl(u),streak:u.streak,role:u.role,season:D.season,friends:u.friends.filter(f=>D.users[f]).map(f=>({name:D.users[f].name,level:lvl(D.users[f])})),pay:'dev',keyId:'',gender:u.gender||'',boost:Math.round(boostOf(u)*100),nn:(D.nt||[]).filter(n=>(n.type==='game'||u.role==='creator')&&n.by!==u.name.toLowerCase()&&n.t>(u.ns||0)).length,...Core.pub(u)});
+const pubU=u=>({name:u.name,bucks:u.bucks,xp:u.xp,level:lvl(u),streak:u.streak,role:u.role,season:D.season,friends:u.friends.filter(f=>D.users[f]).map(f=>({name:D.users[f].name,level:lvl(D.users[f])})),pay:(typeof window==='undefined'?'off':'dev'),keyId:'',gender:u.gender||'',boost:Math.round(boostOf(u)*100),nn:(D.nt||[]).filter(n=>(n.type==='game'||u.role==='creator')&&n.by!==u.name.toLowerCase()&&n.t>(u.ns||0)).length,...Core.pub(u)});
 const tk=u=>{const t=dayS();if(u.last!==t){u.streak=u.last===dayS(1)?Math.min(7,u.streak+1):1;u.last=t}};
-async function api(p,b){try{return local(p,b||{})}catch(e){toast(e.message);SFX.play('error');return null}}
+async function api(p,b){try{
+ if(!window.PG_API)return local(p,b||{});
+ const r=await fetch('/api/'+p,{method:'POST',headers:{'Content-Type':'application/json','x-token':TOK},body:JSON.stringify(b||{})});
+ let j=null;try{j=await r.json()}catch(e){}
+ if(!r.ok)throw new Error((j&&j.error)||'Server error ('+r.status+')');
+ if(j&&typeof j.token==='string'){TOK=j.token;try{TOK?localStorage.setItem('pgtok',TOK):localStorage.removeItem('pgtok')}catch(e){}}
+ return j}catch(e){toast(e.message==='Failed to fetch'?'Cannot reach the server':e.message);SFX.play('error');return null}}
 function local(p,b){const E=m=>{throw new Error(m)},cl=(n,a,c)=>Math.max(a,Math.min(c,Math.floor(+n)||0));
  if(p==='signup'||p==='login'){const n=String(b.u||'').trim(),pw=String(b.p||''),k=n.toLowerCase();
   if(!/^\w{3,16}$/.test(n)||pw.length<4||k in Object.prototype)E('Username: 3-16 letters, numbers or _. Password: 4+ characters.');
@@ -336,7 +342,7 @@ function local(p,b){const E=m=>{throw new Error(m)},cl=(n,a,c)=>Math.max(a,Math.
   else{if(D.ug.filter(x=>x.k===k).length>=(adm?40:12))E('You reached the game limit. Delete one first.');g={id:'g'+now.toString(36)+Math.floor(Math.random()*1296).toString(36),k,by:u.name,title,desc,type,code,ts:now};D.ug.push(g);note('game',u.name+' published a new game: '+title,k,g.id)}
   sv();return{id:g.id}}
  case 'ug/del':{const i=(D.ug||[]).findIndex(x=>x.id===String(b.id));if(i<0)E('Game not found');if(D.ug[i].k!==k&&!adm)E('Not allowed');D.ug.splice(i,1);sv();return{ok:1}}
- case 'pay/order':{if(b.kind==='vip'){Core.addVip(u);sv();return{dev:1,user:pubU(u)}}const r=cl(b.rupees,1,5000);if(!r)E('Enter 1-5000 rupees');u.bucks+=cre?0:r*5;sv();return{dev:1,user:pubU(u)}}
+ case 'pay/order':{if(typeof window==='undefined')E('Payments are not switched on yet.');if(b.kind==='vip'){Core.addVip(u);sv();return{dev:1,user:pubU(u)}}const r=cl(b.rupees,1,5000);if(!r)E('Enter 1-5000 rupees');u.bucks+=cre?0:r*5;sv();return{dev:1,user:pubU(u)}}
  }E('Not found')}
 
 const isC=()=>S.role==='creator',isA=()=>S.role==='creator'||S.role==='admin';
@@ -691,11 +697,11 @@ function arenaGo(mode,how){stopA();const code=how==='room'?($('#rc').value||'').
   G.iv=setInterval(()=>{if(R.state==='lobby'){cd-=.05;R.cd=cd;if(Math.ceil(cd)!==G.lc){G.lc=Math.ceil(cd);if(cd>0)SFX.play('beep')}if(cd<=0){R.state='play';SFX.play('go')}}else{const p=R.ps[0],i=inp();if(p.alive){p.dx=i.dx;p.dy=i.dy;if(i.s){if(p.sm<=0)R.ps.forEach(q=>{if(q!==p&&q.alive&&Math.hypot(q.x-p.x,q.y-p.y)<90){G.st.sm++;G.hit[q.id]=R.t}});p.smash=1}}Arena.step(R,.05)}
    const alive=R.ps.filter(p=>p.alive).map(p=>p.id);if(prev)prev.forEach(id=>{if(!alive.includes(id)){const q=R.ps.find(p=>p.id===id);if(q){addChat({sys:1,m:'💥 '+q.name+' fell off the edge!'});SFX.play(q===R.ps[0]?'crash':'fall');if(G.hit[q.id]!=null&&R.t-G.hit[q.id]<3.5)G.st.k++}}});prev=alive;
    const sn=Arena.snap(R);drawA(sn);if(R.state==='over'&&!G.done){G.done=1;const pl=R.ps[0].place||1,n=R.ps.length;fin(Math.min(40,pl===1?30:5+(n-pl)*4),pl===1?5:1,pl===1?'You won!':'You placed #'+pl,{g:mode,d:{k:G.st.k,sm:G.st.sm,w:pl===1?1:0,g:1}})}},50)}
- else{const es=new EventSource('/api/arena/stream?mode='+mode+(code?'&code='+encodeURIComponent(code):''));G.es=es;
+ else{const es=new EventSource('/api/arena/stream?t='+encodeURIComponent(TOK)+'&mode='+mode+(code?'&code='+encodeURIComponent(code):''));G.es=es;
   es.onmessage=e=>drawA(JSON.parse(e.data));es.addEventListener('chat',e=>addChat(JSON.parse(e.data)));
   es.addEventListener('reward',e=>{const j=JSON.parse(e.data);S=j.user;hdr();es.close();G.es=null;clearInterval(G.inp);SFX.play(j.place===1?'win':'lose');$('#ar').innerHTML=`<p><b>You placed #${j.place}</b> +${j.xp} XP, +${j.b} 🎮 <button onclick="arenaMenu('${mode}')">Play again</button></p>`});
   es.onerror=()=>{if(es.readyState===2)toast('Could not join (room full or already started). Try again.')};
-  G.inp=setInterval(()=>{const i=inp();fetch('/api/arena/input',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({dx:i.dx,dy:i.dy,s:i.s})}).catch(()=>{})},66)}}
+  G.inp=setInterval(()=>{const i=inp();fetch('/api/arena/input',{method:'POST',headers:{'Content-Type':'application/json','x-token':TOK},body:JSON.stringify({dx:i.dx,dy:i.dy,s:i.s})}).catch(()=>{})},66)}}
 // ---------- Pixel Rivals / Hyper Duel (client) ----------
 const HEROES=[['blaze','Blaze','Rifle · Dash'],['boomer','Boomer','Shotgun · Shield'],['viper','Viper','Sniper · Cloak'],['nova','Nova','SMG · Heal']];let HSEL='blaze';
 document.addEventListener('pointermove',e=>{if(G.ar!==2||e.pointerType!=='mouse')return;const c=$('#cv');if(!c)return;const r=c.getBoundingClientRect();G.mx=(e.clientX-r.left)*c.width/r.width;G.my=(e.clientY-r.top)*c.height/r.height;G.nx=(e.clientX-r.left)/r.width*2-1;G.ny=-((e.clientY-r.top)/r.height*2-1);G.aimT=Date.now()});
@@ -725,11 +731,11 @@ function shooterGo(mode,how){stopA();const code=how==='room'?($('#rc').value||''
   Shooter.spawn(R);let cd=3;R.cd=cd;
   G.iv=setInterval(()=>{if(R.state==='lobby'){cd-=.05;R.cd=cd;if(Math.ceil(cd)!==G.lc){G.lc=Math.ceil(cd);if(cd>0)SFX.play('beep')}if(cd<=0){R.state='play';SFX.play('go')}}else{const p=R.ps[0],i=inp();p.dx=i.dx;p.dy=i.dy;p.f=i.f;p.a=i.a;if(i.ab)p.ab=1;Shooter.step(R,.05)}
    const sn=Shooter.snap(R);drawS(sn);if(R.state==='over'&&!G.done){G.done=1;const w=R.winner===0,k=R.ps[0].k;fin(Math.min(40,(w?30:8)+k*2),w?6:1,(w?'Victory! ':R.winner<0?'Draw. ':'Defeat. ')+k+' kills',{g:mode,d:{k:k,w:w?1:0,bk:k,g:1}})}},50)}
- else{const es=new EventSource('/api/arena/stream?mode='+mode+'&hero='+HSEL+(code?'&code='+encodeURIComponent(code):''));G.es=es;
+ else{const es=new EventSource('/api/arena/stream?t='+encodeURIComponent(TOK)+'&mode='+mode+'&hero='+HSEL+(code?'&code='+encodeURIComponent(code):''));G.es=es;
   es.onmessage=e=>drawS(JSON.parse(e.data));es.addEventListener('chat',e=>addChat(JSON.parse(e.data)));
   es.addEventListener('reward',e=>{const j=JSON.parse(e.data);S=j.user;hdr();es.close();G.es=null;clearInterval(G.inp);SFX.play(j.win?'win':j.tie?'draw':'lose');$('#ar').innerHTML=`<p><b>${j.win?'Victory!':j.tie?'Draw':'Defeat'}</b> ${j.k} kills · +${j.xp} XP, +${j.b} 🎮 <button onclick="shooterMenu('${mode}')">Play again</button></p>`});
   es.onerror=()=>{if(es.readyState===2)toast('Could not join (room full or already started). Try again.')};
-  G.inp=setInterval(()=>{fetch('/api/arena/input',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(inp())}).catch(()=>{})},66)}}
+  G.inp=setInterval(()=>{fetch('/api/arena/input',{method:'POST',headers:{'Content-Type':'application/json','x-token':TOK},body:JSON.stringify(inp())}).catch(()=>{})},66)}}
 function drawS2D(sn){const c=$('#cv');if(!c)return;const x=c.getContext('2d'),VW=520,VH=390,me=S.name.toLowerCase(),mp=sn.p.find(p=>p[0]===me)||sn.p[0],WW=Shooter.W,HH=Shooter.H;
  const cx=Math.max(0,Math.min(WW-VW,mp[1]-VW/2)),cy=Math.max(0,Math.min(HH-VH,mp[2]-VH/2)),k=c.width/VW;G.cam={x:cx,y:cy,k};G.me={x:mp[1],y:mp[2]};
  x.fillStyle='#0b0d2b';x.fillRect(0,0,c.width,c.height);x.fillStyle='#1f3a4a';x.fillRect(-cx*k,-cy*k,WW*k,HH*k);
