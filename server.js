@@ -143,11 +143,10 @@ setInterval(()=>{rooms.forEach(r=>{const S=r.sim;
 
 // ---------- AI Code Helper (game code only). Needs GEMINI_API_KEY (Google Gemini) or ANTHROPIC_API_KEY ----------
 // Optional: AI_MODEL to force a model (Gemini: picked automatically from your key's model list; Anthropic default claude-sonnet-4-5)
-let gModel={n:'',t:0};
-// Asks Google which models this API key can use and picks the newest fast one (so no model name is hard-coded). Set AI_MODEL to force a specific model.
-async function geminiPick(GK,fresh){
-  if(process.env.AI_MODEL)return process.env.AI_MODEL;
-  if(!fresh&&gModel.n&&Date.now()-gModel.t<216e5)return gModel.n;
+let gModel={l:[],t:0};
+// Asks Google which models this API key can use and ranks them (newest fast "flash" first), so no model name is hard-coded. Set AI_MODEL to force one model.
+async function geminiList(GK,fresh){
+  if(!fresh&&gModel.l.length&&Date.now()-gModel.t<216e5)return gModel.l;
   const r=await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200',{headers:{'x-goog-api-key':GK},signal:AbortSignal.timeout(15000)});
   const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error((j.error&&j.error.message)||'Could not list Gemini models');
   const names=(j.models||[]).filter(m=>(m.supportedGenerationMethods||[]).includes('generateContent')).map(m=>String(m.name).replace(/^models\//,''))
@@ -155,7 +154,8 @@ async function geminiPick(GK,fresh){
   const tier=n=>/flash/.test(n)?(/lite|8b/.test(n)?1:2):0,ver=n=>{const m=/^gemini-(\d+(?:\.\d+)?)/.exec(n);return m?parseFloat(m[1]):0},pre=n=>/preview|exp/.test(n)?0:1;
   names.sort((a,b)=>tier(b)-tier(a)||ver(b)-ver(a)||pre(b)-pre(a)||a.length-b.length);
   if(!names.length)throw new Error('No Gemini model is available for this API key');
-  gModel={n:names[0],t:Date.now()};console.log('AI helper using Gemini model:',gModel.n);return gModel.n}
+  gModel={l:names,t:Date.now()};console.log('AI helper Gemini models (best first):',names.slice(0,4).join(', '));return names}
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 async function aiCode(b,tok,res){
   const key=keyOf(tok);if(!key)return send(res,401,{error:'Please log in.'});
   const GK=process.env.GEMINI_API_KEY,AK=process.env.ANTHROPIC_API_KEY;
@@ -167,12 +167,16 @@ async function aiCode(b,tok,res){
   const user=(mode==='check'?'Check this game code for mistakes and fix them. ':'Write the game code. ')+'Request: '+(prompt||'(none)')+'\n\nCurrent code:\n'+code;
   try{
     let r,j,t;
-    if(GK){const call=async fresh=>{const model=await geminiPick(GK,fresh);
-        const rr=await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+encodeURIComponent(model)+':generateContent',{method:'POST',signal:AbortSignal.timeout(90000),headers:{'x-goog-api-key':GK,'content-type':'application/json'},
-          body:JSON.stringify({systemInstruction:{parts:[{text:system}]},contents:[{role:'user',parts:[{text:user}]}],generationConfig:{maxOutputTokens:8000}})});
-        return{rr,jj:await rr.json().catch(()=>({}))}};
-      let o1=await call(false);if(!o1.rr.ok&&(o1.rr.status===404||o1.rr.status===400)&&!process.env.AI_MODEL)o1=await call(true); // model retired? look the list up again
-      r=o1.rr;j=o1.jj;if(!r.ok)throw new Error((j.error&&j.error.message)||'AI request failed');
+    if(GK){const forced=process.env.AI_MODEL,body=JSON.stringify({systemInstruction:{parts:[{text:system}]},contents:[{role:'user',parts:[{text:user}]}],generationConfig:{maxOutputTokens:8000}});
+      let cands=forced?[forced,forced]:(await geminiList(GK,false)).slice(0,3),busy=false,ref=false;
+      for(let i=0;i<cands.length;i++){
+        r=await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+encodeURIComponent(cands[i])+':generateContent',{method:'POST',signal:AbortSignal.timeout(90000),headers:{'x-goog-api-key':GK,'content-type':'application/json'},body});
+        j=await r.json().catch(()=>({}));if(r.ok)break;
+        console.error('Gemini',cands[i],'->',r.status,(j.error&&j.error.message||'').slice(0,100));
+        if(r.status===404&&i===0&&!forced&&!ref){ref=true;gModel={l:[],t:0};cands=(await geminiList(GK,true)).slice(0,3);i=-1;continue} // model retired: look the list up again
+        if([429,500,502,503,504].includes(r.status)||r.status===404){busy=r.status!==404;await sleep(1200);continue} // busy: try the next model
+        throw new Error((j.error&&j.error.message)||'AI request failed')}
+      if(!r.ok)throw new Error(busy?'Gemini is very busy right now. Please try again in a minute.':((j.error&&j.error.message)||'AI request failed'));
       t=((j.candidates&&j.candidates[0]&&j.candidates[0].content&&j.candidates[0].content.parts)||[]).map(c=>c.text||'').join('').trim()}
     else{
       r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',signal:AbortSignal.timeout(90000),headers:{'x-api-key':AK,'anthropic-version':'2023-06-01','content-type':'application/json'},
